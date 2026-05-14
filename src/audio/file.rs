@@ -1,8 +1,10 @@
 use crate::audio::frame::AudioFrame;
+use crate::error::AgentError;
 use hound::WavReader;
 
-pub fn read_wav_file(path: &str) -> Result<AudioFrame, String> {
-    let mut reader = WavReader::open(path).map_err(|e| format!("failed to open WAV file: {e}"))?;
+pub fn read_wav_file(path: &str) -> Result<AudioFrame, AgentError> {
+    let mut reader =
+        WavReader::open(path).map_err(|e| AgentError::AudioFileError(e.to_string()))?;
 
     let metadata = reader.spec();
     let sample_rate = metadata.sample_rate;
