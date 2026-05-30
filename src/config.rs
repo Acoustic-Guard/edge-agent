@@ -7,6 +7,7 @@ pub struct AppConfig {
     pub hub_url: String,
     pub device_id: String,
     pub loop_interval_secs: u64,
+    pub amqp_uri: String,
 }
 
 impl AppConfig {
@@ -24,10 +25,14 @@ impl AppConfig {
             .parse::<u64>()
             .context("LOOP_INTERVAL_SECS must be a valid u64 number")?;
 
+        let amqp_uri =
+            env::var("AMQP_URI").context("variable AMQP_URI is not set in .env or environment")?;
+
         Ok(Self {
             hub_url,
             device_id,
             loop_interval_secs,
+            amqp_uri,
         })
     }
 }
