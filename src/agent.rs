@@ -1,6 +1,6 @@
 use crate::config::AppConfig;
 use crate::transport::dto::SpectrumPayloadDto;
-use crate::transport::http::HubClient;
+use crate::transport::rmq::RmqClient;
 use crate::{audio, dsp};
 use anyhow::Result;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -8,13 +8,33 @@ use tracing::{error, info, warn};
 
 pub struct AcousticAgent {
     pub config: AppConfig,
-    pub client: HubClient,
+    pub client: RmqClient,
 }
 
 impl AcousticAgent {
-    pub fn new(config: AppConfig) -> Self {
-        let client = HubClient::new(&config.hub_url);
-        Self { config, client }
+    pub async fn build(config: AppConfig) -> Result<Self> {
+        let mut retries = 5;
+
+        loop {
+            match RmqClient::new(&config.amqp_uri, "acoustic.frames").await {
+                Ok(client) => {
+                    info!("Successfully connected to RMQ inside agent loop!");
+                    return Ok(Self { config, client });
+                }
+                Err(e) => {
+                    if retries == 0 {
+                        error!("RabbitMQ connection failed permanently: {}", e);
+                        return Err(anyhow::anyhow!("RabbitMQ init failed: {}", e));
+                    }
+                    warn!(
+                        "RabbitMQ port is not ready yet, waiting 3 seconds... ({} retries left)",
+                        retries
+                    );
+                    tokio::time::sleep(Duration::from_secs(3)).await;
+                    retries -= 1;
+                }
+            }
+        }
     }
 
     pub async fn run(&self) {
@@ -37,21 +57,25 @@ impl AcousticAgent {
 
         info!("FFT processing...");
         let spectrum = dsp::fft::compute_fft(&frame.samples);
-
         let compressed_spectrum: Vec<f32> = spectrum.into_iter().take(100).collect();
-        let timestamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
+
+        let timestamp_ms = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as u64;
+
         let payload = SpectrumPayloadDto {
-            device_id: self.config.device_id.clone(),
-            timestamp,
-            sample_rate: frame.sample_rate,
-            frequency_spectrum: compressed_spectrum,
+            sensor_id: self.config.device_id.clone(),
+            captured_at_ms: timestamp_ms,
+            latitude: 50.4501,
+            longitude: 30.5234,
+            fft_bins: compressed_spectrum,
+            sample_rate_hz: frame.sample_rate,
+            peak_db: -12.5,
         };
 
-        info!("sending to a hub...");
+        info!("sending to RabbitMQ...");
 
         match self.client.send_spectrum(&payload).await {
-            Ok(_) => info!("data was successfully delivered"),
-            Err(e) => error!("error: {e}"),
+            Ok(_) => info!("data was successfully delivered to RMQ"),
+            Err(e) => error!("error sending to RMQ: {e}"),
         }
 
         Ok(())

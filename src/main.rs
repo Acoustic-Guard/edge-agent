@@ -27,7 +27,7 @@ async fn main() -> Result<()> {
     info!("edge agent initialization");
 
     let config = AppConfig::load()?;
-    let agent = AcousticAgent::new(config);
+    let agent = AcousticAgent::build(config).await?;
     agent.run().await;
 
     Ok(())
