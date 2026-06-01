@@ -39,43 +39,85 @@ impl AcousticAgent {
 
     pub async fn run(&self) {
         let secs = self.config.loop_interval_secs;
-        info!("Staring the main agent loop. Interval: {secs} seconds");
+        info!("Starting the main agent loop. Interval: {secs} seconds");
+
+        let frame = match audio::file::read_wav_file("assets/satie.wav") {
+            Ok(f) => f,
+            Err(e) => {
+                error!("Failed to read audio file: {}", e);
+                return;
+            }
+        };
+
+        let sample_rate = frame.sample_rate;
+        let chunk_size = sample_rate as usize;
+        let mut offset = 0;
+
+        let mut interval = tokio::time::interval(Duration::from_secs(secs));
 
         loop {
-            if let Err(e) = self.process_and_send().await {
+            interval.tick().await;
+
+            let end = offset + chunk_size;
+            let chunk = if end <= frame.samples.len() {
+                &frame.samples[offset..end]
+            } else {
+                &frame.samples[offset..]
+            };
+
+            if let Err(e) = self.process_and_send(chunk, sample_rate).await {
                 error!("Error in current iteration: {e}");
-                warn!("Waiting for {secs} seconds before the next attempt");
             }
 
-            tokio::time::sleep(Duration::from_secs(secs)).await;
+            offset += chunk_size;
+            if offset >= frame.samples.len() {
+                offset = 0;
+                info!("Reached the end of the audio file. Looping back...");
+            }
         }
     }
 
-    async fn process_and_send(&self) -> Result<()> {
-        info!("reading audio file...");
-        let frame = audio::file::read_wav_file("assets/satie.wav")?;
+    async fn process_and_send(&self, chunk: &[i16], sample_rate: u32) -> Result<()> {
+        if chunk.is_empty() {
+            return Ok(());
+        }
 
-        info!("FFT processing...");
-        let spectrum = dsp::fft::compute_fft(&frame.samples);
-        let compressed_spectrum: Vec<f32> = spectrum.into_iter().take(100).collect();
+        let peak_db = dsp::features::compute_dbfs(chunk);
+
+        let threshold_db = -30.0;
+        let is_anomaly = peak_db > threshold_db;
 
         let timestamp_ms = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as u64;
 
-        let payload = SpectrumPayloadDto {
+        let mut payload = SpectrumPayloadDto {
             sensor_id: self.config.device_id.clone(),
             captured_at_ms: timestamp_ms,
             latitude: 50.4501,
             longitude: 30.5234,
-            fft_bins: compressed_spectrum,
-            sample_rate_hz: frame.sample_rate,
-            peak_db: -12.5,
+            fft_bins: vec![],
+            sample_rate_hz: sample_rate,
+            peak_db,
         };
 
-        info!("sending to RabbitMQ...");
+        if is_anomaly {
+            info!(
+                "Anomaly detected! Peak DB: {:.2}. Calculating FFT...",
+                peak_db
+            );
 
-        match self.client.send_spectrum(&payload).await {
-            Ok(_) => info!("data was successfully delivered to RMQ"),
-            Err(e) => error!("error sending to RMQ: {e}"),
+            let spectrum = dsp::fft::compute_fft(chunk);
+            payload.fft_bins = spectrum.into_iter().take(100).collect();
+
+            let routing_key = format!("sensor.anomaly.{}", self.config.device_id);
+            self.client.send_message(&routing_key, &payload).await?;
+        } else {
+            info!(
+                "Background noise. Peak DB: {:.2}. Sending Telemetry.",
+                peak_db
+            );
+
+            let routing_key = format!("sensor.telemetry.{}", self.config.device_id);
+            self.client.send_message(&routing_key, &payload).await?;
         }
 
         Ok(())
