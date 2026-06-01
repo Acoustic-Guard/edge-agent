@@ -2,7 +2,7 @@ use crate::error::AgentError;
 use crate::transport::dto::SpectrumPayloadDto;
 use lapin::{
     BasicProperties, Connection, ConnectionProperties, ExchangeKind,
-    options::{BasicPublishOptions, ExchangeDeclareOptions},
+    options::{BasicPublishOptions, ConfirmSelectOptions, ExchangeDeclareOptions},
     types::FieldTable,
 };
 use tracing::{error, info};
@@ -24,6 +24,11 @@ impl RmqClient {
 
         let channel = connection
             .create_channel()
+            .await
+            .map_err(|e| AgentError::TransportError(e.to_string()))?;
+
+        channel
+            .confirm_select(ConfirmSelectOptions::default())
             .await
             .map_err(|e| AgentError::TransportError(e.to_string()))?;
 
