@@ -41,7 +41,7 @@ impl AcousticAgent {
         let secs = self.config.loop_interval_secs;
         info!("Starting the main agent loop. Interval: {secs} seconds");
 
-        let frame = match audio::file::read_wav_file("assets/satie.wav") {
+        let frame = match audio::file::read_wav_file("assets/mock_test.wav") {
             Ok(f) => f,
             Err(e) => {
                 error!("Failed to read audio file: {}", e);
