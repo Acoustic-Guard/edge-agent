@@ -4,7 +4,6 @@ use std::env;
 
 #[derive(Debug, Clone)]
 pub struct AppConfig {
-    pub hub_url: String,
     pub device_id: String,
     pub loop_interval_secs: u64,
     pub amqp_uri: String,
@@ -13,9 +12,6 @@ pub struct AppConfig {
 impl AppConfig {
     pub fn load() -> Result<Self> {
         dotenv().ok();
-
-        let hub_url =
-            env::var("HUB_URL").context("variable HUB_URL is not set in .env or environment")?;
 
         let device_id = env::var("DEVICE_ID")
             .context("variable DEVICE_ID is not set in .env or environment")?;
@@ -29,7 +25,6 @@ impl AppConfig {
             env::var("AMQP_URI").context("variable AMQP_URI is not set in .env or environment")?;
 
         Ok(Self {
-            hub_url,
             device_id,
             loop_interval_secs,
             amqp_uri,
