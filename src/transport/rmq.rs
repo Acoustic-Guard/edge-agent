@@ -46,10 +46,12 @@ impl RmqClient {
         })
     }
 
-    pub async fn send_spectrum(&self, payload: &SpectrumPayloadDto) -> Result<(), AgentError> {
-        let routing_key = format!("sensor.anomaly.{}", payload.sensor_id);
-
-        let payload_bytes = serde_json::to_vec(&payload)
+    pub async fn send_message(
+        &self,
+        routing_key: &str,
+        payload: &SpectrumPayloadDto,
+    ) -> Result<(), AgentError> {
+        let payload_bytes = serde_json::to_vec(payload)
             .map_err(|e| AgentError::SerializationError(e.to_string()))?;
 
         let confirm = self
