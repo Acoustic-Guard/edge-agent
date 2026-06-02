@@ -7,6 +7,7 @@ use lapin::{
 };
 use tracing::{error, info};
 
+#[derive(Clone)]
 pub struct RmqClient {
     channel: lapin::Channel,
     exchange_name: String,

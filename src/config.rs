@@ -37,8 +37,8 @@ impl AppConfig {
             .parse::<f32>()
             .context("LONGITUDE must be a valid f32")?;
 
-        let audio_file_path = env::var("AUDIO_FILE_PATH")
-            .unwrap_or_else(|_| "assets/mock_test.wav".to_string());
+        let audio_file_path =
+            env::var("AUDIO_FILE_PATH").unwrap_or_else(|_| "assets/mock_test.wav".to_string());
 
         Ok(Self {
             device_id,
