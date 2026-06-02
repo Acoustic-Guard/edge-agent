@@ -92,8 +92,8 @@ impl AcousticAgent {
         let mut payload = SpectrumPayloadDto {
             sensor_id: self.config.device_id.clone(),
             captured_at_ms: timestamp_ms,
-            latitude: 50.4501,
-            longitude: 30.5234,
+            latitude: self.config.latitude,
+            longitude: self.config.longitude,
             fft_bins: vec![],
             sample_rate_hz: sample_rate,
             peak_db,
