@@ -1,5 +1,4 @@
 use crate::error::AgentError;
-use crate::transport::dto::SpectrumPayloadDto;
 use lapin::{
     BasicProperties, Connection, ConnectionProperties, ExchangeKind,
     options::{BasicPublishOptions, ConfirmSelectOptions, ExchangeDeclareOptions},
@@ -52,10 +51,10 @@ impl RmqClient {
         })
     }
 
-    pub async fn send_message(
+    pub async fn send_message<T: serde::Serialize>(
         &self,
         routing_key: &str,
-        payload: &SpectrumPayloadDto,
+        payload: &T,
     ) -> Result<(), AgentError> {
         let payload_bytes = serde_json::to_vec(payload)
             .map_err(|e| AgentError::SerializationError(e.to_string()))?;

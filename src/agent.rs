@@ -100,14 +100,14 @@ impl AcousticAgent {
                 }
 
                 let sample_rate = frame.sample_rate;
-                let peak_db = dsp::features::compute_dbfs(chunk);
+                let chunk_db = dsp::features::compute_dbfs(chunk);
 
                 {
                     let mut stats = stats_for_anomaly.lock().unwrap();
-                    stats.add(peak_db);
+                    stats.add(chunk_db);
                 }
 
-                if peak_db > anomaly_config.anomaly_threshold_db {
+                if chunk_db > anomaly_config.anomaly_threshold_db {
                     let now = Instant::now();
                     let should_send = match last_anomaly_time {
                         Some(time) => now.duration_since(time) >= cooldown_duration,
@@ -115,10 +115,7 @@ impl AcousticAgent {
                     };
 
                     if should_send {
-                        info!(
-                            "Anomaly detected! Peak DB: {:.2}. Calculating FFT...",
-                            peak_db
-                        );
+                        info!("Anomaly detected! DB: {:.2}. Calculating FFT...", chunk_db);
 
                         let spectrum = dsp::fft::compute_fft(chunk);
                         let timestamp_ms = SystemTime::now()
@@ -136,7 +133,7 @@ impl AcousticAgent {
                                 .take(anomaly_config.fft_bins_count)
                                 .collect(),
                             sample_rate_hz: sample_rate,
-                            peak_db,
+                            peak_db: chunk_db,
                         };
 
                         let routing_key = format!("sensor.anomaly.{}", anomaly_config.device_id);
@@ -168,26 +165,23 @@ impl AcousticAgent {
                     stats.take_and_reset()
                 };
 
-                if let Some((avg_db, max_db)) = current_stats {
+                if let Some((avg_db, _max_db)) = current_stats {
                     let timestamp_ms = SystemTime::now()
                         .duration_since(UNIX_EPOCH)
                         .unwrap()
                         .as_millis() as u64;
 
-                    let payload = SpectrumPayloadDto {
+                    use crate::transport::dto::TelemetryPayloadDto;
+
+                    let payload = TelemetryPayloadDto {
                         sensor_id: telemetry_config.device_id.clone(),
                         captured_at_ms: timestamp_ms,
                         latitude: telemetry_config.latitude,
                         longitude: telemetry_config.longitude,
-                        fft_bins: vec![],
-                        sample_rate_hz: telemetry_config.default_sample_rate,
-                        peak_db: avg_db,
+                        avg_db,
                     };
 
-                    info!(
-                        "Sending Telemetry. Avg DB: {:.2}, Max DB: {:.2}",
-                        avg_db, max_db
-                    );
+                    info!("Sending Telemetry. Avg DB: {:.2}", avg_db);
 
                     let routing_key = format!("sensor.telemetry.{}", telemetry_config.device_id);
                     if let Err(e) = telemetry_client.send_message(&routing_key, &payload).await {
