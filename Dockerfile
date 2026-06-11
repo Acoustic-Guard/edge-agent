@@ -1,6 +1,6 @@
 FROM rust:1.95-slim-bookworm AS builder
 
-RUN apt-get update && apt-get install -y pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y pkg-config libssl-dev libasound2-dev && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -14,7 +14,7 @@ RUN cargo build --release
 
 FROM debian:bookworm-slim AS runtime
 
-RUN apt-get update && apt-get install -y ca-certificates libssl3 && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y ca-certificates libssl3 libasound2 && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
