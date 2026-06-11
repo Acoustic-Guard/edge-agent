@@ -14,7 +14,6 @@ pub struct AppConfig {
     pub cooldown_duration_secs: u64,
     pub telemetry_interval_secs: u64,
     pub fft_bins_count: usize,
-    pub default_sample_rate: u32,
     pub rmq_max_retries: u32,
     pub rmq_retry_delay_secs: u64,
 }
@@ -58,7 +57,6 @@ impl AppConfig {
             other => anyhow::bail!("Invalid AUDIO_SOURCE '{}'. Expected MIC or FILE", other),
         };
 
-        // Зчитування нових параметрів
         let anomaly_threshold_db = env::var("ANOMALY_THRESHOLD_DB")
             .unwrap_or_else(|_| "-30.0".to_string())
             .parse::<f32>()
@@ -78,11 +76,6 @@ impl AppConfig {
             .unwrap_or_else(|_| "100".to_string())
             .parse::<usize>()
             .context("FFT_BINS_COUNT must be a valid usize")?;
-
-        let default_sample_rate = env::var("DEFAULT_SAMPLE_RATE")
-            .unwrap_or_else(|_| "44100".to_string())
-            .parse::<u32>()
-            .context("DEFAULT_SAMPLE_RATE must be a valid u32")?;
 
         let rmq_max_retries = env::var("RMQ_MAX_RETRIES")
             .unwrap_or_else(|_| "5".to_string())
@@ -104,7 +97,6 @@ impl AppConfig {
             cooldown_duration_secs,
             telemetry_interval_secs,
             fft_bins_count,
-            default_sample_rate,
             rmq_max_retries,
             rmq_retry_delay_secs,
         })

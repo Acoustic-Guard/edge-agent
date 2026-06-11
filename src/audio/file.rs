@@ -1,5 +1,4 @@
 use crate::audio::frame::AudioFrame;
-use crate::error::AgentError;
 use hound::WavReader;
 use std::time::Duration;
 use tokio::sync::mpsc::Sender;
