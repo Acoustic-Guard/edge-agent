@@ -9,7 +9,13 @@ pub struct AppConfig {
     pub amqp_uri: String,
     pub latitude: f32,
     pub longitude: f32,
-    pub audio_file_path: String,
+    pub audio_source_mode: AudioSourceMode,
+}
+
+#[derive(Debug, Clone)]
+pub enum AudioSourceMode {
+    Mic,
+    File(String),
 }
 
 impl AppConfig {
@@ -37,8 +43,18 @@ impl AppConfig {
             .parse::<f32>()
             .context("LONGITUDE must be a valid f32")?;
 
-        let audio_file_path =
-            env::var("AUDIO_FILE_PATH").unwrap_or_else(|_| "assets/mock_test.wav".to_string());
+        let audio_source = env::var("AUDIO_SOURCE")
+            .context("variable AUDIO_SOURCE is not set in .env or environment")?;
+
+        let audio_source_mode = match audio_source.as_str() {
+            "MIC" => AudioSourceMode::Mic,
+            "FILE" => {
+                let audio_file_path = env::var("AUDIO_FILE_PATH")
+                    .unwrap_or_else(|_| "assets/mock_test.wav".to_string());
+                AudioSourceMode::File(audio_file_path)
+            }
+            other => anyhow::bail!("Invalid AUDIO_SOURCE '{}'. Expected MIC or FILE", other),
+        };
 
         Ok(Self {
             device_id,
@@ -46,7 +62,7 @@ impl AppConfig {
             amqp_uri,
             latitude,
             longitude,
-            audio_file_path,
+            audio_source_mode,
         })
     }
 }
