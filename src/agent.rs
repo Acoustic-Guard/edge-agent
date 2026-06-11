@@ -1,13 +1,15 @@
 use anyhow::Result;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use tokio::sync::mpsc::Receiver;
 use tokio::time::Instant;
 use tracing::{error, info, warn};
 
+use crate::audio::frame::AudioFrame;
 use crate::config::AppConfig;
+use crate::dsp;
 use crate::transport::dto::SpectrumPayloadDto;
 use crate::transport::rmq::RmqClient;
-use crate::{audio, dsp};
 
 #[derive(Debug)]
 struct TelemetryStats {
@@ -79,7 +81,7 @@ impl AcousticAgent {
         }
     }
 
-    pub async fn run(&self) {
+    pub async fn run(&self, mut rx: Receiver<AudioFrame>) {
         let telemetry_stats = Arc::new(Mutex::new(TelemetryStats::new()));
 
         let anomaly_config = self.config.clone();
@@ -87,41 +89,16 @@ impl AcousticAgent {
         let stats_for_anomaly = Arc::clone(&telemetry_stats);
 
         let anomaly_task = tokio::spawn(async move {
-            let frame = match audio::file::read_wav_file(&anomaly_config.audio_file_path) {
-                Ok(f) => f,
-                Err(e) => {
-                    error!("Failed to read audio file: {}", e);
-                    return;
-                }
-            };
-
-            let sample_rate = frame.sample_rate;
-            let chunk_size = sample_rate as usize;
-            let mut offset = 0;
-
-            let mut interval = tokio::time::interval(Duration::from_millis(3000));
             let mut last_anomaly_time: Option<Instant> = None;
             let cooldown_duration = Duration::from_millis(3000);
 
-            loop {
-                interval.tick().await;
-
-                let end = offset + chunk_size;
-                let chunk = if end <= frame.samples.len() {
-                    &frame.samples[offset..end]
-                } else {
-                    &frame.samples[offset..]
-                };
-
-                offset += chunk_size;
-                if offset >= frame.samples.len() {
-                    offset = 0;
-                }
-
+            while let Some(frame) = rx.recv().await {
+                let chunk = &frame.samples;
                 if chunk.is_empty() {
                     continue;
                 }
 
+                let sample_rate = frame.sample_rate;
                 let peak_db = dsp::features::compute_dbfs(chunk);
 
                 {
@@ -167,6 +144,7 @@ impl AcousticAgent {
                     }
                 }
             }
+            info!("Audio stream closed, stopping anomaly task.");
         });
 
         let telemetry_config = self.config.clone();
@@ -203,7 +181,7 @@ impl AcousticAgent {
                     };
 
                     info!(
-                        "Sending 5-Min Telemetry. Avg DB: {:.2}, Max DB: {:.2}",
+                        "Sending Telemetry. Avg DB: {:.2}, Max DB: {:.2}",
                         avg_db, max_db
                     );
 

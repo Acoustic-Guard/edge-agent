@@ -7,8 +7,9 @@ mod error;
 mod transport;
 
 use crate::agent::AcousticAgent;
-use crate::config::AppConfig;
+use crate::config::{AppConfig, AudioSourceMode};
 use anyhow::Result;
+use tokio::sync::mpsc;
 use tracing::info;
 
 #[tokio::main]
@@ -27,8 +28,24 @@ async fn main() -> Result<()> {
     info!("edge agent initialization");
 
     let config = AppConfig::load()?;
+    let (tx, rx) = mpsc::channel(10);
+
+    match &config.audio_source_mode {
+        AudioSourceMode::Mic => {
+            tokio::spawn(async move {
+                audio::capture::start_mic_stream(tx).await;
+            });
+        }
+        AudioSourceMode::File(path) => {
+            let file_path = path.clone();
+            tokio::spawn(async move {
+                audio::file::start_file_stream(file_path, tx).await;
+            });
+        }
+    }
+
     let agent = AcousticAgent::build(config).await?;
-    agent.run().await;
+    agent.run(rx).await;
 
     Ok(())
 }
