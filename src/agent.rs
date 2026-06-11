@@ -57,7 +57,8 @@ pub struct AcousticAgent {
 
 impl AcousticAgent {
     pub async fn build(config: AppConfig) -> Result<Self> {
-        let mut retries = 5;
+        let mut retries = config.rmq_max_retries;
+        let retry_delay = Duration::from_secs(config.rmq_retry_delay_secs);
 
         loop {
             match RmqClient::new(&config.amqp_uri, "acoustic.frames").await {
@@ -71,10 +72,10 @@ impl AcousticAgent {
                         return Err(anyhow::anyhow!("RabbitMQ init failed: {}", e));
                     }
                     warn!(
-                        "RabbitMQ is not ready yet, waiting 3 seconds... ({} retries left)",
-                        retries
+                        "RabbitMQ is not ready yet, waiting {} seconds... ({} retries left)",
+                        config.rmq_retry_delay_secs, retries
                     );
-                    tokio::time::sleep(Duration::from_secs(3)).await;
+                    tokio::time::sleep(retry_delay).await;
                     retries -= 1;
                 }
             }
@@ -90,7 +91,7 @@ impl AcousticAgent {
 
         let anomaly_task = tokio::spawn(async move {
             let mut last_anomaly_time: Option<Instant> = None;
-            let cooldown_duration = Duration::from_millis(3000);
+            let cooldown_duration = Duration::from_secs(anomaly_config.cooldown_duration_secs);
 
             while let Some(frame) = rx.recv().await {
                 let chunk = &frame.samples;
@@ -106,7 +107,7 @@ impl AcousticAgent {
                     stats.add(peak_db);
                 }
 
-                if peak_db > -30.0 {
+                if peak_db > anomaly_config.anomaly_threshold_db {
                     let now = Instant::now();
                     let should_send = match last_anomaly_time {
                         Some(time) => now.duration_since(time) >= cooldown_duration,
@@ -130,7 +131,10 @@ impl AcousticAgent {
                             captured_at_ms: timestamp_ms,
                             latitude: anomaly_config.latitude,
                             longitude: anomaly_config.longitude,
-                            fft_bins: spectrum.into_iter().take(100).collect(),
+                            fft_bins: spectrum
+                                .into_iter()
+                                .take(anomaly_config.fft_bins_count)
+                                .collect(),
                             sample_rate_hz: sample_rate,
                             peak_db,
                         };
@@ -151,10 +155,10 @@ impl AcousticAgent {
         let telemetry_client = self.client.clone();
         let stats_for_telemetry = Arc::clone(&telemetry_stats);
 
-        let telemetry_interval = /*300*/ 20;
-
         let telemetry_task = tokio::spawn(async move {
-            let mut interval = tokio::time::interval(Duration::from_secs(telemetry_interval));
+            let mut interval = tokio::time::interval(Duration::from_secs(
+                telemetry_config.telemetry_interval_secs,
+            ));
 
             loop {
                 interval.tick().await;
@@ -176,7 +180,7 @@ impl AcousticAgent {
                         latitude: telemetry_config.latitude,
                         longitude: telemetry_config.longitude,
                         fft_bins: vec![],
-                        sample_rate_hz: 44100,
+                        sample_rate_hz: telemetry_config.default_sample_rate,
                         peak_db: avg_db,
                     };
 
