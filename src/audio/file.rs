@@ -6,20 +6,6 @@ use tokio::sync::mpsc::Sender;
 use tokio::time::sleep;
 use tracing::{error, info};
 
-pub fn _read_wav_file(path: &str) -> Result<AudioFrame, AgentError> {
-    let mut reader =
-        WavReader::open(path).map_err(|e| AgentError::AudioFileError(e.to_string()))?;
-
-    let metadata = reader.spec();
-    let sample_rate = metadata.sample_rate;
-    let samples: Vec<i16> = reader.samples::<i16>().filter_map(Result::ok).collect();
-
-    Ok(AudioFrame {
-        sample_rate,
-        samples,
-    })
-}
-
 pub async fn start_file_stream(path: String, tx: Sender<AudioFrame>) {
     info!("Starting file audio stream from: {}", path);
 
