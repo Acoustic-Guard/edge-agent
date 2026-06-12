@@ -5,15 +5,17 @@ use std::env;
 #[derive(Debug, Clone)]
 pub struct AppConfig {
     pub device_id: String,
-    pub amqp_uri: String,
+    pub send_mode: String,
+    pub audio_source_mode: AudioSourceMode,
     pub latitude: f32,
     pub longitude: f32,
-    pub audio_source_mode: AudioSourceMode,
 
     pub anomaly_threshold_db: f32,
     pub cooldown_duration_secs: u64,
     pub telemetry_interval_secs: u64,
     pub fft_bins_count: usize,
+
+    pub amqp_uri: String,
     pub rmq_max_retries: u32,
     pub rmq_retry_delay_secs: u64,
 }
@@ -87,6 +89,9 @@ impl AppConfig {
             .parse::<u64>()
             .context("RMQ_RETRY_DELAY_SECS must be a valid u64")?;
 
+        let send_mode = env::var("SEND_MODE")
+            .unwrap_or_else(|_| "RAW".to_string());
+
         Ok(Self {
             device_id,
             amqp_uri,
@@ -99,6 +104,7 @@ impl AppConfig {
             fft_bins_count,
             rmq_max_retries,
             rmq_retry_delay_secs,
+            send_mode,
         })
     }
 }
