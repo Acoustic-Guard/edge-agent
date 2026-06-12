@@ -8,47 +8,9 @@ use tracing::{error, info, warn};
 use crate::audio::frame::AudioFrame;
 use crate::config::AppConfig;
 use crate::dsp;
-use crate::transport::dto::SpectrumPayloadDto;
+use crate::telemetry::TelemetryStats;
+use crate::transport::dto::AnomalyPayloadDto;
 use crate::transport::rmq::RmqClient;
-
-#[derive(Debug)]
-struct TelemetryStats {
-    sum_db: f32,
-    max_db: f32,
-    count: u32,
-}
-
-impl TelemetryStats {
-    fn new() -> Self {
-        Self {
-            sum_db: 0.0,
-            max_db: f32::MIN,
-            count: 0,
-        }
-    }
-
-    fn add(&mut self, db: f32) {
-        self.sum_db += db;
-        self.count += 1;
-        if db > self.max_db {
-            self.max_db = db;
-        }
-    }
-
-    fn take_and_reset(&mut self) -> Option<(f32, f32)> {
-        if self.count == 0 {
-            return None;
-        }
-        let avg = self.sum_db / self.count as f32;
-        let max = self.max_db;
-
-        self.sum_db = 0.0;
-        self.count = 0;
-        self.max_db = f32::MIN;
-
-        Some((avg, max))
-    }
-}
 
 pub struct AcousticAgent {
     pub config: AppConfig,
@@ -102,10 +64,11 @@ impl AcousticAgent {
                 let sample_rate = frame.sample_rate;
                 let chunk_db = dsp::features::compute_dbfs(chunk);
 
-                {
+                let current_avg_db = {
                     let mut stats = stats_for_anomaly.lock().unwrap();
                     stats.add(chunk_db);
-                }
+                    stats.current_avg()
+                };
 
                 if chunk_db > anomaly_config.anomaly_threshold_db {
                     let now = Instant::now();
@@ -115,25 +78,35 @@ impl AcousticAgent {
                     };
 
                     if should_send {
-                        info!("Anomaly detected! DB: {:.2}. Calculating FFT...", chunk_db);
+                        info!("Anomaly detected! DB: {:.2}. Preparing payload...", chunk_db);
 
-                        let spectrum = dsp::fft::compute_fft(chunk);
                         let timestamp_ms = SystemTime::now()
                             .duration_since(UNIX_EPOCH)
                             .unwrap()
                             .as_millis() as u64;
 
-                        let payload = SpectrumPayloadDto {
+                        let mut payload_fft = Vec::new();
+                        let mut payload_raw = Vec::new();
+
+                        if anomaly_config.send_mode == "RAW" {
+                            payload_raw = chunk.clone();
+                        } else {
+                            payload_fft = dsp::fft::compute_fft(chunk)
+                                .into_iter()
+                                .take(anomaly_config.fft_bins_count)
+                                .collect();
+                        }
+
+                        let payload = AnomalyPayloadDto {
                             sensor_id: anomaly_config.device_id.clone(),
                             captured_at_ms: timestamp_ms,
                             latitude: anomaly_config.latitude,
                             longitude: anomaly_config.longitude,
-                            fft_bins: spectrum
-                                .into_iter()
-                                .take(anomaly_config.fft_bins_count)
-                                .collect(),
                             sample_rate_hz: sample_rate,
                             peak_db: chunk_db,
+                            avg_db: current_avg_db,
+                            fft_bins: payload_fft,
+                            raw_audio: payload_raw,
                         };
 
                         let routing_key = format!("sensor.anomaly.{}", anomaly_config.device_id);

@@ -5,6 +5,7 @@ mod domain;
 mod dsp;
 mod error;
 mod transport;
+mod telemetry;
 
 use crate::agent::AcousticAgent;
 use crate::config::{AppConfig, AudioSourceMode};
