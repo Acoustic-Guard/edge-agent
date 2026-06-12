@@ -26,7 +26,8 @@ pub async fn start_mic_stream(tx: Sender<AudioFrame>) {
 
     let sample_format = supported_config.sample_format();
 
-    let stream_config: cpal::StreamConfig = supported_config.into();
+    let mut stream_config: cpal::StreamConfig = supported_config.into();
+    stream_config.sample_rate = 44100;
 
     let sample_rate = stream_config.sample_rate;
     let channels = stream_config.channels;
