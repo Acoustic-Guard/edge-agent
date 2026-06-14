@@ -26,13 +26,13 @@ pub async fn start_mic_stream(tx: Sender<AudioFrame>) {
 
     let sample_format = supported_config.sample_format();
 
-    let mut stream_config: cpal::StreamConfig = supported_config.into();
-    stream_config.sample_rate = 44100;
+    // Use device's default configuration without modification to avoid WASAPI shared mode errors
+    let stream_config: cpal::StreamConfig = supported_config.into();
 
     let sample_rate = stream_config.sample_rate;
     let channels = stream_config.channels;
     info!(
-        "Mic config: Sample Rate: {}, Channels: {}",
+        "Mic config: Sample Rate: {}, Channels: {} (using device default)",
         sample_rate, channels
     );
 
