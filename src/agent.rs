@@ -12,12 +12,16 @@ use crate::telemetry::TelemetryStats;
 use crate::transport::dto::AnomalyPayloadDto;
 use crate::transport::rmq::RmqClient;
 
+/// Represents the core edge agent responsible for processing incoming audio frames,
+/// detecting anomalies, and sending telemetry and anomaly payloads to RabbitMQ.
 pub struct AcousticAgent {
     pub config: AppConfig,
     pub client: RmqClient,
 }
 
 impl AcousticAgent {
+    /// Builds and initializes a new AcousticAgent instance.
+    /// Attempts to establish a connection to RabbitMQ with retry logic.
     pub async fn build(config: AppConfig) -> Result<Self> {
         let mut retries = config.rmq_max_retries;
         let retry_delay = Duration::from_secs(config.rmq_retry_delay_secs);
@@ -44,6 +48,10 @@ impl AcousticAgent {
         }
     }
 
+    /// Runs the main processing loops for the agent.
+    /// Spawns two asynchronous tasks:
+    /// 1. Anomaly Task: Processes incoming audio frames and triggers anomalies based on DB thresholds.
+    /// 2. Telemetry Task: Periodically sends background noise statistics to the backend.
     pub async fn run(&self, mut rx: Receiver<AudioFrame>) {
         let telemetry_stats = Arc::new(Mutex::new(TelemetryStats::new()));
 
@@ -70,6 +78,7 @@ impl AcousticAgent {
                     stats.current_avg()
                 };
 
+                // Check if the current chunk's volume exceeds the anomaly threshold
                 if chunk_db > anomaly_config.anomaly_threshold_db {
                     let now = Instant::now();
                     let should_send = match last_anomaly_time {
@@ -125,6 +134,7 @@ impl AcousticAgent {
         let telemetry_client = self.client.clone();
         let stats_for_telemetry = Arc::clone(&telemetry_stats);
 
+        // Task responsible for sending periodic background noise telemetry
         let telemetry_task = tokio::spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(
                 telemetry_config.telemetry_interval_secs,
